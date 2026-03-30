@@ -17,8 +17,12 @@ dependencies:
   google_mlkit_object_detection: ^0.13.0
   google_mlkit_commons: 0.8.1
 
+  # TensorFlow Lite for object detection and distance estimation
+  tflite_flutter: ^0.12.1
+  image: ^4.1.7 
+ 
   # Image picker (gallery)
-  image_picker: ^1.1.2
+  image_picker: 0.8.9
 
   # State management (light usage)
   flutter_riverpod: ^2.5.1
@@ -33,3 +37,5 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  assets:
+    - assets/models/yolov8n_float32.tflite

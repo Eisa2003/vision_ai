@@ -2,58 +2,56 @@
 
 import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
+import 'base_detector.dart';
 
-/// Wraps ML Kit's ObjectDetector for both stream frames and static images.
-class DetectionService {
+/// ML Kit implementation of [BaseDetector].
+/// Behaviour is identical to before — it now just conforms to the shared interface.
+class MlKitDetector extends BaseDetector {
   ObjectDetector? _detector;
 
-  /// Call once before using [processImage] or [processInputImage].
-  void initialize() {
+  @override
+  String get name => 'ML Kit';
+
+  @override
+  String get description => 'Google ML Kit · broad categories · fastest';
+
+  @override
+  Future<void> initialize() async {
     final options = ObjectDetectorOptions(
-      mode: DetectionMode.stream,          // works for both stream & single
+      mode: DetectionMode.stream,
       classifyObjects: true,
       multipleObjects: true,
     );
     _detector = ObjectDetector(options: options);
   }
 
-  bool get isInitialized => _detector != null;
-
-  /// Run detection on an [InputImage] (camera frame or file-based image).
-  /// Returns an empty list on error.
-  Future<List<DetectedObject>> processInputImage(InputImage image) async {
+  @override
+  Future<List<Detection>> detect(InputImage image) async {
     if (_detector == null) return [];
     try {
-      return await _detector!.processImage(image);
-    } catch (e) {
-      // Silently ignore transient errors (e.g., frame drop during stream)
+      final objects = await _detector!.processImage(image);
+      return objects.map((obj) {
+        final label = obj.labels.isEmpty ? 'Unknown' : obj.labels.first.text;
+        final confidence =
+            obj.labels.isEmpty ? 0.0 : obj.labels.first.confidence;
+        return Detection(
+          boundingBox: obj.boundingBox,
+          label: label,
+          confidence: confidence,
+        );
+      }).toList();
+    } catch (_) {
       return [];
     }
   }
 
-  /// Convenience: detect from a file path (for gallery images).
-  Future<List<DetectedObject>> processFile(String filePath) async {
-    final inputImage = InputImage.fromFilePath(filePath);
-    return processInputImage(inputImage);
-  }
-
-  /// Release native resources. Call in [dispose()].
+  @override
   Future<void> close() async {
     await _detector?.close();
     _detector = null;
   }
-}
 
-/// Extracts a human-readable label from a [DetectedObject].
-/// Falls back to "Unknown" when no classification is available.
-String labelFor(DetectedObject object) {
-  if (object.labels.isEmpty) return 'Unknown';
-  // Labels are sorted by confidence descending
-  return object.labels.first.text;
-}
-
-/// Extracts the top confidence score (0.0 – 1.0) from a [DetectedObject].
-double confidenceFor(DetectedObject object) {
-  if (object.labels.isEmpty) return 0.0;
-  return object.labels.first.confidence;
+  /// Convenience: detect from a file path (used by ImageDetectionScreen).
+  Future<List<Detection>> detectFile(String filePath) =>
+      detect(InputImage.fromFilePath(filePath));
 }

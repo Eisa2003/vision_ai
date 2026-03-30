@@ -2,45 +2,32 @@
 
 import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:google_mlkit_object_detection/google_mlkit_object_detection.dart';
+import 'package:google_mlkit_commons/google_mlkit_commons.dart';
 
-import 'services/detection_service.dart';
-import 'services/distance_service.dart';
+import 'providers.dart';
+import 'services/yolo_detector.dart';
 import 'widgets/bounding_box_painter.dart';
+import 'services/base_detector.dart';
 
-class ImageDetectionScreen extends StatefulWidget {
+class ImageDetectionScreen extends ConsumerStatefulWidget {
   const ImageDetectionScreen({super.key});
 
   @override
-  State<ImageDetectionScreen> createState() => _ImageDetectionScreenState();
+  ConsumerState<ImageDetectionScreen> createState() =>
+      _ImageDetectionScreenState();
 }
 
-class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
-  final _detectionService = DetectionService();
-  final _distanceService = DistanceService();
+class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
   final _picker = ImagePicker();
 
   File? _selectedImage;
   Size _imageSize = Size.zero;
   List<DetectionResult> _results = [];
   bool _isProcessing = false;
-
-  // The GlobalKey lets us measure the rendered image widget's size
   final _imageKey = GlobalKey();
   Size _renderedImageSize = Size.zero;
-
-  @override
-  void initState() {
-    super.initState();
-    _detectionService.initialize();
-  }
-
-  @override
-  void dispose() {
-    _detectionService.close();
-    super.dispose();
-  }
 
   Future<void> _pickAndDetect() async {
     final picked = await _picker.pickImage(source: ImageSource.gallery);
@@ -52,30 +39,38 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
       _isProcessing = true;
     });
 
-    // Decode image to get native size
-    final decoded = await decodeImageFromList(await File(picked.path).readAsBytes());
-    _imageSize = Size(decoded.width.toDouble(), decoded.height.toDouble());
+    final decoded =
+        await decodeImageFromList(await File(picked.path).readAsBytes());
+    final imageSize =
+        Size(decoded.width.toDouble(), decoded.height.toDouble());
 
-    // Run detection
-    final objects = await _detectionService.processFile(picked.path);
+    // Use whichever detector is currently active
+    final detector = ref.read(activeDetectorProvider);
+    final distanceSvc = ref.read(activeDistanceProvider);
 
-    final results = objects.map((obj) {
+    final detections =
+        detector is YoloDetector
+            ? await detector.detectFromFile(picked.path)
+            : await detector.detect(InputImage.fromFilePath(picked.path));
+
+    final results = detections.map((d) {
       return DetectionResult(
-        boundingBox: obj.boundingBox,
-        label: labelFor(obj),
-        confidence: confidenceFor(obj),
-        distance: _distanceService.estimate(obj.boundingBox, _imageSize),
+        boundingBox: d.boundingBox,
+        label: d.label,
+        confidence: d.confidence,
+        distance: distanceSvc.estimate(d.boundingBox, imageSize),
       );
     }).toList();
 
     if (!mounted) return;
     setState(() {
+      _imageSize = imageSize;
       _results = results;
       _isProcessing = false;
     });
 
-    // Measure the rendered image size after layout
-    WidgetsBinding.instance.addPostFrameCallback((_) => _measureRenderedImage());
+    WidgetsBinding.instance
+        .addPostFrameCallback((_) => _measureRenderedImage());
   }
 
   void _measureRenderedImage() {
@@ -83,9 +78,7 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
     if (ctx == null) return;
     final box = ctx.findRenderObject() as RenderBox?;
     if (box == null) return;
-    setState(() {
-      _renderedImageSize = box.size;
-    });
+    setState(() => _renderedImageSize = box.size);
   }
 
   @override
@@ -96,7 +89,11 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
           gradient: LinearGradient(
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [Color(0xFF0A0E1A), Color(0xFF0D1B2A), Color(0xFF1A0A2E)],
+            colors: [
+              Color(0xFF0A0E1A),
+              Color(0xFF0D1B2A),
+              Color(0xFF1A0A2E),
+            ],
           ),
         ),
         child: SafeArea(
@@ -113,6 +110,7 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
   }
 
   Widget _buildTopBar() {
+    final detectorName = ref.watch(activeDetectorTypeProvider).label;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
       child: Row(
@@ -125,20 +123,41 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
-                border: Border.all(color: Colors.white.withOpacity(0.15)),
+                border:
+                    Border.all(color: Colors.white.withOpacity(0.15)),
               ),
               child: const Icon(Icons.arrow_back_ios_new_rounded,
                   color: Colors.white, size: 18),
             ),
           ),
           const SizedBox(width: 14),
-          const Text(
-            'IMAGE DETECTION',
-            style: TextStyle(
-              color: Colors.white,
-              fontSize: 13,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 2.5,
+          const Expanded(
+            child: Text(
+              'IMAGE DETECTION',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+                letterSpacing: 2.5,
+              ),
+            ),
+          ),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: const Color(0xFF7C4DFF).withOpacity(0.15),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(
+                  color: const Color(0xFF7C4DFF).withOpacity(0.5)),
+            ),
+            child: Text(
+              detectorName,
+              style: const TextStyle(
+                color: Color(0xFF7C4DFF),
+                fontSize: 11,
+                fontWeight: FontWeight.w700,
+              ),
             ),
           ),
         ],
@@ -147,9 +166,7 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
   }
 
   Widget _buildBody() {
-    if (_selectedImage == null) {
-      return _buildEmptyState();
-    }
+    if (_selectedImage == null) return _buildEmptyState();
     return _buildImageWithOverlay();
   }
 
@@ -165,23 +182,18 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
               color: const Color(0xFF7C4DFF).withOpacity(0.1),
               borderRadius: BorderRadius.circular(24),
               border: Border.all(
-                color: const Color(0xFF7C4DFF).withOpacity(0.4),
-              ),
+                  color: const Color(0xFF7C4DFF).withOpacity(0.4)),
             ),
-            child: const Icon(
-              Icons.image_search_rounded,
-              color: Color(0xFF7C4DFF),
-              size: 48,
-            ),
+            child: const Icon(Icons.image_search_rounded,
+                color: Color(0xFF7C4DFF), size: 48),
           ),
           const SizedBox(height: 24),
           const Text(
             'No image selected',
             style: TextStyle(
-              color: Colors.white,
-              fontSize: 18,
-              fontWeight: FontWeight.w600,
-            ),
+                color: Colors.white,
+                fontSize: 18,
+                fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
@@ -204,33 +216,26 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
         padding: const EdgeInsets.all(16),
         child: Column(
           children: [
-            // ── Image + bounding box overlay ───────────────────────────
             ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: Stack(
                 children: [
-                  // The image
                   Image.file(
                     _selectedImage!,
                     key: _imageKey,
                     fit: BoxFit.contain,
                     width: double.infinity,
                   ),
-
-                  // Processing shimmer overlay
                   if (_isProcessing)
                     Positioned.fill(
                       child: Container(
                         color: Colors.black.withOpacity(0.5),
                         child: const Center(
                           child: CircularProgressIndicator(
-                            color: Color(0xFF7C4DFF),
-                          ),
+                              color: Color(0xFF7C4DFF)),
                         ),
                       ),
                     ),
-
-                  // Bounding boxes
                   if (!_isProcessing &&
                       _results.isNotEmpty &&
                       _renderedImageSize != Size.zero)
@@ -246,12 +251,11 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
                 ],
               ),
             ),
-
             const SizedBox(height: 16),
-
-            // ── Results list ────────────────────────────────────────────
             if (!_isProcessing && _results.isNotEmpty) _buildResultsList(),
-            if (!_isProcessing && _results.isEmpty && _selectedImage != null)
+            if (!_isProcessing &&
+                _results.isEmpty &&
+                _selectedImage != null)
               _buildNoDetections(),
           ],
         ),
@@ -275,11 +279,8 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
             ),
           ),
         ),
-        ..._results.asMap().entries.map((entry) {
-          final i = entry.key;
-          final r = entry.value;
-          return _ResultTile(result: r, index: i);
-        }),
+        ..._results.asMap().entries.map((e) =>
+            _ResultTile(result: e.value, index: e.key)),
       ],
     );
   }
@@ -336,13 +337,17 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(
-                _isProcessing ? Icons.hourglass_top_rounded : Icons.add_photo_alternate_rounded,
+                _isProcessing
+                    ? Icons.hourglass_top_rounded
+                    : Icons.add_photo_alternate_rounded,
                 color: Colors.white,
                 size: 22,
               ),
               const SizedBox(width: 10),
               Text(
-                _isProcessing ? 'Detecting...' : 'Pick Image from Gallery',
+                _isProcessing
+                    ? 'Detecting...'
+                    : 'Pick Image from Gallery',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 15,
@@ -361,14 +366,12 @@ class _ImageDetectionScreenState extends State<ImageDetectionScreen> {
 class _ResultTile extends StatelessWidget {
   final DetectionResult result;
   final int index;
-
   const _ResultTile({required this.result, required this.index});
 
   @override
   Widget build(BuildContext context) {
     const colors = [Color(0xFF00E5FF), Color(0xFF7C4DFF)];
     final color = colors[index % colors.length];
-
     return Container(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -380,27 +383,26 @@ class _ResultTile extends StatelessWidget {
       child: Row(
         children: [
           Container(
-            width: 8,
-            height: 8,
-            decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-          ),
+              width: 8,
+              height: 8,
+              decoration:
+                  BoxDecoration(color: color, shape: BoxShape.circle)),
           const SizedBox(width: 12),
           Expanded(
-            child: Text(
-              result.label,
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 14,
-                fontWeight: FontWeight.w600,
-              ),
-            ),
+            child: Text(result.label,
+                style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w600)),
           ),
           _Chip(
-            label: '${(result.confidence * 100).toStringAsFixed(0)}%',
-            color: color,
-          ),
+              label:
+                  '${(result.confidence * 100).toStringAsFixed(0)}%',
+              color: color),
           const SizedBox(width: 6),
-          _Chip(label: result.distance, color: const Color(0xFF00BFA5)),
+          _Chip(
+              label: result.distance,
+              color: const Color(0xFF00BFA5)),
         ],
       ),
     );
@@ -410,7 +412,6 @@ class _ResultTile extends StatelessWidget {
 class _Chip extends StatelessWidget {
   final String label;
   final Color color;
-
   const _Chip({required this.label, required this.color});
 
   @override
@@ -422,14 +423,11 @@ class _Chip extends StatelessWidget {
         borderRadius: BorderRadius.circular(6),
         border: Border.all(color: color.withOpacity(0.4)),
       ),
-      child: Text(
-        label,
-        style: TextStyle(
-          color: color,
-          fontSize: 11,
-          fontWeight: FontWeight.w700,
-        ),
-      ),
+      child: Text(label,
+          style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: FontWeight.w700)),
     );
   }
 }
