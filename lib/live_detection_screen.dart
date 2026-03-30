@@ -63,13 +63,19 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
 
   Future<void> _onCameraFrame(CameraImage image) async {
     if (_isProcessing) return;
-    _isProcessing = true;
-
-    try {
-      // ref.read is from riverpod i guess, it allows us to read the current active detector and distance estimator
+ 
+    // ref.read is from riverpod i guess, it allows us to read the current active detector and distance estimator
       // it needs a provider to read from, and it will return the current value of that provider'
       // A provider is similar to react's context, it holds the state of the app and allows us to read and write that state from anywhere in the app
-      final detector    = ref.read(activeDetectorProvider);
+    final detectorState = ref.read(activeDetectorProvider);
+  if (detectorState is! AsyncData) return; // Skip frame if still loading/switching
+  final detector = detectorState.value; // Now we are 100% sure it's initialized
+     _isProcessing = true;
+
+    try {
+      
+      
+
       final distanceSvc = ref.read(activeDistanceProvider);
       final frameSize   = Size(image.width.toDouble(), image.height.toDouble());
 
