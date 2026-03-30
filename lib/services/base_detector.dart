@@ -50,6 +50,7 @@ enum DetectorType {
   yolo,
 }
 
+// model instance being created
 extension DetectorTypeLabel on DetectorType {
   String get label {
     switch (this) {
