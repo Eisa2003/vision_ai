@@ -41,17 +41,22 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
 
     final decoded =
         await decodeImageFromList(await File(picked.path).readAsBytes());
-    final imageSize =
-        Size(decoded.width.toDouble(), decoded.height.toDouble());
+    final imageSize = Size(decoded.width.toDouble(), decoded.height.toDouble());
 
     // Use whichever detector is currently active
-    final detector = ref.read(activeDetectorProvider);
+    final detectorState = ref.read(activeDetectorProvider);
+
+    if (detectorState is! AsyncData) {
+      setState(() => _isProcessing = false);
+      return;
+    }
+
+    final detector = detectorState.value!;
     final distanceSvc = ref.read(activeDistanceProvider);
 
-    final detections =
-        detector is YoloDetector
-            ? await detector.detectFromFile(picked.path)
-            : await detector.detect(InputImage.fromFilePath(picked.path));
+    final detections = detector is YoloDetector
+        ? await detector.detectFromFile(picked.path)
+        : await detector.detect(InputImage.fromFilePath(picked.path));
 
     final results = detections.map((d) {
       return DetectionResult(
@@ -123,8 +128,7 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
               decoration: BoxDecoration(
                 color: Colors.white.withOpacity(0.08),
                 borderRadius: BorderRadius.circular(10),
-                border:
-                    Border.all(color: Colors.white.withOpacity(0.15)),
+                border: Border.all(color: Colors.white.withOpacity(0.15)),
               ),
               child: const Icon(Icons.arrow_back_ios_new_rounded,
                   color: Colors.white, size: 18),
@@ -143,13 +147,12 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
             ),
           ),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(
               color: const Color(0xFF7C4DFF).withOpacity(0.15),
               borderRadius: BorderRadius.circular(6),
-              border: Border.all(
-                  color: const Color(0xFF7C4DFF).withOpacity(0.5)),
+              border:
+                  Border.all(color: const Color(0xFF7C4DFF).withOpacity(0.5)),
             ),
             child: Text(
               detectorName,
@@ -181,8 +184,8 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
             decoration: BoxDecoration(
               color: const Color(0xFF7C4DFF).withOpacity(0.1),
               borderRadius: BorderRadius.circular(24),
-              border: Border.all(
-                  color: const Color(0xFF7C4DFF).withOpacity(0.4)),
+              border:
+                  Border.all(color: const Color(0xFF7C4DFF).withOpacity(0.4)),
             ),
             child: const Icon(Icons.image_search_rounded,
                 color: Color(0xFF7C4DFF), size: 48),
@@ -191,9 +194,7 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
           const Text(
             'No image selected',
             style: TextStyle(
-                color: Colors.white,
-                fontSize: 18,
-                fontWeight: FontWeight.w600),
+                color: Colors.white, fontSize: 18, fontWeight: FontWeight.w600),
           ),
           const SizedBox(height: 8),
           Text(
@@ -253,9 +254,7 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
             ),
             const SizedBox(height: 16),
             if (!_isProcessing && _results.isNotEmpty) _buildResultsList(),
-            if (!_isProcessing &&
-                _results.isEmpty &&
-                _selectedImage != null)
+            if (!_isProcessing && _results.isEmpty && _selectedImage != null)
               _buildNoDetections(),
           ],
         ),
@@ -279,8 +278,10 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
             ),
           ),
         ),
-        ..._results.asMap().entries.map((e) =>
-            _ResultTile(result: e.value, index: e.key)),
+        ..._results
+            .asMap()
+            .entries
+            .map((e) => _ResultTile(result: e.value, index: e.key)),
       ],
     );
   }
@@ -300,8 +301,8 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
           const SizedBox(width: 10),
           Text(
             'No objects detected. Try a clearer image.',
-            style: TextStyle(
-                color: Colors.white.withOpacity(0.5), fontSize: 13),
+            style:
+                TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 13),
           ),
         ],
       ),
@@ -345,9 +346,7 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
               ),
               const SizedBox(width: 10),
               Text(
-                _isProcessing
-                    ? 'Detecting...'
-                    : 'Pick Image from Gallery',
+                _isProcessing ? 'Detecting...' : 'Pick Image from Gallery',
                 style: const TextStyle(
                   color: Colors.white,
                   fontSize: 15,
@@ -385,8 +384,7 @@ class _ResultTile extends StatelessWidget {
           Container(
               width: 8,
               height: 8,
-              decoration:
-                  BoxDecoration(color: color, shape: BoxShape.circle)),
+              decoration: BoxDecoration(color: color, shape: BoxShape.circle)),
           const SizedBox(width: 12),
           Expanded(
             child: Text(result.label,
@@ -396,13 +394,10 @@ class _ResultTile extends StatelessWidget {
                     fontWeight: FontWeight.w600)),
           ),
           _Chip(
-              label:
-                  '${(result.confidence * 100).toStringAsFixed(0)}%',
+              label: '${(result.confidence * 100).toStringAsFixed(0)}%',
               color: color),
           const SizedBox(width: 6),
-          _Chip(
-              label: result.distance,
-              color: const Color(0xFF00BFA5)),
+          _Chip(label: result.distance, color: const Color(0xFF00BFA5)),
         ],
       ),
     );
@@ -425,9 +420,7 @@ class _Chip extends StatelessWidget {
       ),
       child: Text(label,
           style: TextStyle(
-              color: color,
-              fontSize: 11,
-              fontWeight: FontWeight.w700)),
+              color: color, fontSize: 11, fontWeight: FontWeight.w700)),
     );
   }
 }

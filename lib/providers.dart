@@ -15,9 +15,7 @@ final activeDetectorTypeProvider =
 // This provider holds the currently active detector instance, which the UI listens to for changes.
 // We call the BaseDetector to abstract away the specific implementation (ML Kit, YOLO, etc.) from the UI.
 // this activeDetectorProvider is a StateNotifierProvider, which means it holds a state (the current detector/BaseDetector type) and allows us to update that state (switching detectors) while notifying the UI of changes.
-final activeDetectorProvider = AsyncNotifierProvider<DetectorNotifier, BaseDetector>(() {
-  return DetectorNotifier();
-});
+
 
 // Change StateNotifierProvider to AsyncNotifierProvider
 final activeDetectorProvider = AsyncNotifierProvider<DetectorNotifier, BaseDetector>(() {

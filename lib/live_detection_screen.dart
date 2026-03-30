@@ -69,7 +69,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
       // A provider is similar to react's context, it holds the state of the app and allows us to read and write that state from anywhere in the app
     final detectorState = ref.read(activeDetectorProvider);
   if (detectorState is! AsyncData) return; // Skip frame if still loading/switching
-  final detector = detectorState.value; // Now we are 100% sure it's initialized
+  final detector = detectorState.value!; // Now we are 100% sure it's initialized
      _isProcessing = true;
 
     try {
