@@ -44,8 +44,15 @@ class BoundingBoxPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (results.isEmpty) return;
 
-    final scaleX = widgetSize.width / imageSize.width;
-    final scaleY = widgetSize.height / imageSize.height;
+    // ML Kit returns boxes in the sensor's native (landscape) coordinate space.
+    // When the phone is portrait the frame is rotated 90°, so we must swap
+    // width ↔ height before computing scale factors.
+    final bool isPortrait = widgetSize.height > widgetSize.width;
+    final double frameW = isPortrait ? imageSize.height : imageSize.width;
+    final double frameH = isPortrait ? imageSize.width : imageSize.height;
+
+    final scaleX = widgetSize.width / frameW;
+    final scaleY = widgetSize.height / frameH;
 
     for (int i = 0; i < results.length; i++) {
       final result = results[i];

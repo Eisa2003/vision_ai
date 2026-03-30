@@ -196,11 +196,10 @@ class _LiveDetectionScreenState extends State<LiveDetectionScreen> {
   }
 
   Widget _buildCameraPreview() {
-    return Center(
-      child: AspectRatio(
-        aspectRatio: _cameraController!.value.aspectRatio,
-        child: CameraPreview(_cameraController!),
-      ),
+    // Fill the entire screen — no AspectRatio wrapper.
+    // SizedBox.expand forces CameraPreview to stretch to the Stack's full size.
+    return SizedBox.expand(
+      child: CameraPreview(_cameraController!),
     );
   }
 
