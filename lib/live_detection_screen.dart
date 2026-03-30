@@ -66,6 +66,9 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
     _isProcessing = true;
 
     try {
+      // ref.read is from riverpod i guess, it allows us to read the current active detector and distance estimator
+      // it needs a provider to read from, and it will return the current value of that provider'
+      // A provider is similar to react's context, it holds the state of the app and allows us to read and write that state from anywhere in the app
       final detector    = ref.read(activeDetectorProvider);
       final distanceSvc = ref.read(activeDistanceProvider);
       final frameSize   = Size(image.width.toDouble(), image.height.toDouble());

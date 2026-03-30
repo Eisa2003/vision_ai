@@ -10,44 +10,36 @@ import 'services/yolo_detector.dart';
 // ── Active detector ───────────────────────────────────────────────────────────
 
 final activeDetectorTypeProvider =
-    StateProvider<DetectorType>((ref) => DetectorType.mlKit);
+    StateProvider<DetectorType>((ref) => DetectorType.yolo);
 
-final activeDetectorProvider =
-    StateNotifierProvider<DetectorNotifier, BaseDetector>((ref) {
-  return DetectorNotifier(ref);
+// This provider holds the currently active detector instance, which the UI listens to for changes.
+// We call the BaseDetector to abstract away the specific implementation (ML Kit, YOLO, etc.) from the UI.
+// this activeDetectorProvider is a StateNotifierProvider, which means it holds a state (the current detector/BaseDetector type) and allows us to update that state (switching detectors) while notifying the UI of changes.
+final activeDetectorProvider = AsyncNotifierProvider<DetectorNotifier, BaseDetector>(() {
+  return DetectorNotifier();
 });
 
-class DetectorNotifier extends StateNotifier<BaseDetector> {
-  final Ref _ref;
+// Change StateNotifierProvider to AsyncNotifierProvider
+final activeDetectorProvider = AsyncNotifierProvider<DetectorNotifier, BaseDetector>(() {
+  return DetectorNotifier();
+});
 
-  DetectorNotifier(this._ref) : super(MlKitDetector()) {
-    _ref.listen<DetectorType>(activeDetectorTypeProvider, (prev, next) {
-      if (prev != next) _switchTo(next);
-    });
-    state.initialize();
-  }
-
-  Future<void> _switchTo(DetectorType type) async {
-    final oldDetector = state;
-
-    final next = _build(type);
-    await next.initialize();
-
-    // Swap state first so the UI picks up the new detector immediately,
-    // then close the old one in the background.
-    state = next;
-    await oldDetector.close();
-  }
-
-  BaseDetector _build(DetectorType type) {
-    switch (type) {
-      case DetectorType.mlKit:
-        return MlKitDetector();
-      case DetectorType.yolo:
-        return YoloDetector();
-    }
+class DetectorNotifier extends AsyncNotifier<BaseDetector> {
+  @override
+  Future<BaseDetector> build() async {
+    // 1. Watch the type (YOLO or ML Kit)
+    final type = ref.watch(activeDetectorTypeProvider);
+    
+    // 2. Build the new detector
+    final detector = (type == DetectorType.yolo) ? YoloDetector() : MlKitDetector();
+    
+    // 3. Await the actual heavy loading (Riverpod handles the 'Loading' state here)
+    await detector.initialize();
+    
+    return detector;
   }
 }
+
 
 // ── Active distance service ───────────────────────────────────────────────────
 
