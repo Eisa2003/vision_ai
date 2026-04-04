@@ -31,6 +31,7 @@ class MlKitDetector extends BaseDetector {
     try {
       final objects = await _detector!.processImage(image);
       return objects.map((obj) {
+        print('ML Kit bounding box: ${obj.boundingBox}');
         final label = obj.labels.isEmpty ? 'Unknown' : obj.labels.first.text;
         final confidence =
             obj.labels.isEmpty ? 0.0 : obj.labels.first.confidence;

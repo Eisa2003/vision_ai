@@ -55,14 +55,13 @@ class YoloDetector extends BaseDetector {
     _interpreter!.allocateTensors();
 
     // ── Print tensor shapes so we know the model's actual layout ──────────
-    final inputTensor  = _interpreter!.getInputTensor(0);
+    final inputTensor = _interpreter!.getInputTensor(0);
     final outputTensor = _interpreter!.getOutputTensor(0);
     print('✅ Model loaded');
-    print('   Input  tensor shape : ${inputTensor.shape}   type: ${inputTensor.type}');
-    print('   Output tensor shape : ${outputTensor.shape}  type: ${outputTensor.type}');
-    // Expected:
-    //   Input  [1, 640, 640, 3]
-    //   Output [1, 84, 8400]   (or [1, 8400, 84] for some exports)
+    print(
+        '   Input  tensor shape : ${inputTensor.shape}   type: ${inputTensor.type}');
+    print(
+        '   Output tensor shape : ${outputTensor.shape}  type: ${outputTensor.type}');
 
     _initialized = true;
   }
@@ -91,7 +90,8 @@ class YoloDetector extends BaseDetector {
       return [];
     }
 
-    print('📷 detectFromBytes — frame ${imageW}x${imageH}, rotation=$rotation, bytes=${bytes.length}');
+    print(
+        '📷 detectFromBytes — frame ${imageW}x${imageH}, rotation=$rotation, bytes=${bytes.length}');
 
     try {
       print('🔄 Converting NV21 → RGB ...');
@@ -100,7 +100,8 @@ class YoloDetector extends BaseDetector {
 
       print('🔄 Converting RGB → Float32 ...');
       final input = _imageToFloat32(rgbImage);
-      print('✅ Float32 buffer length: ${input.length}  (expected ${_inputSize * _inputSize * 3})');
+      print(
+          '✅ Float32 buffer length: ${input.length}  (expected ${_inputSize * _inputSize * 3})');
 
       return _runInference(input, imageW.toDouble(), imageH.toDouble());
     } catch (e, st) {
@@ -147,12 +148,11 @@ class YoloDetector extends BaseDetector {
 
   // ─── Inference ────────────────────────────────────────────────────────────
 
-  List<Detection> _runInference(
-      Float32List input, double origW, double origH) {
+  List<Detection> _runInference(Float32List input, double origW, double origH) {
     final interpreter = _interpreter!;
 
     // ── Step 1: confirm tensor shapes ─────────────────────────────────────
-    final inputShape  = interpreter.getInputTensor(0).shape;
+    final inputShape = interpreter.getInputTensor(0).shape;
     final outputShape = interpreter.getOutputTensor(0).shape;
     print('🔢 Input  shape: $inputShape');
     print('🔢 Output shape: $outputShape');
@@ -167,7 +167,8 @@ class YoloDetector extends BaseDetector {
 
     // Verify our float buffer is the right size
     if (input.length != h * w * c) {
-      print('❌ Buffer size mismatch: got ${input.length}, expected ${h * w * c}');
+      print(
+          '❌ Buffer size mismatch: got ${input.length}, expected ${h * w * c}');
       return [];
     }
 
@@ -216,7 +217,8 @@ class YoloDetector extends BaseDetector {
     // Sample a few values from the output to confirm it's not all zeros
     final sample = <double>[];
     for (int i = 0; i < min(5, dim2); i++) {
-      sample.add((outputList[0][0] as List)[i] as double); // first row = cx values
+      sample.add(
+          (outputList[0][0] as List)[i] as double); // first row = cx values
     }
     print('🔍 Output sample (first 5 cx values): $sample');
 
@@ -225,7 +227,8 @@ class YoloDetector extends BaseDetector {
     final nonZero = flat.where((v) => v != 0.0).length;
     print('🔍 Non-zero output values: $nonZero / ${dim1 * dim2}');
     if (nonZero == 0) {
-      print('⚠️  All output values are zero — model may not have run correctly');
+      print(
+          '⚠️  All output values are zero — model may not have run correctly');
     }
 
     // ── Step 6: parse detections ───────────────────────────────────────────
@@ -246,7 +249,7 @@ class YoloDetector extends BaseDetector {
     // rows 4-83 → class scores
 
     final int numAnchors = (output[0] as List).length;
-    final int numRows    = output.length;
+    final int numRows = output.length;
     print('🔍 Parsing: numRows=$numRows, numAnchors=$numAnchors');
 
     // Quick confidence scan — find the max score in the whole output
@@ -258,10 +261,12 @@ class YoloDetector extends BaseDetector {
         if (v > globalMax) globalMax = v;
       }
     }
-    print('🔍 Global max class score across all anchors: ${globalMax.toStringAsFixed(4)}');
+    print(
+        '🔍 Global max class score across all anchors: ${globalMax.toStringAsFixed(4)}');
     print('   Confidence threshold: $_confidenceThreshold');
     if (globalMax < _confidenceThreshold) {
-      print('⚠️  No anchor exceeds threshold — try lowering _confidenceThreshold');
+      print(
+          '⚠️  No anchor exceeds threshold — try lowering _confidenceThreshold');
     }
 
     final List<_RawBox> candidates = [];
@@ -283,12 +288,14 @@ class YoloDetector extends BaseDetector {
       final bw = (output[2] as List)[a] as double;
       final bh = (output[3] as List)[a] as double;
 
+      print('Sanity check: cx=$cx cy=$cy w=$bw h=$bh');
+
       // YOLOv8 TFLite export: coords are in pixel space relative to _inputSize
-      // Normalise to [0,1] then scale to original image dimensions
-      final left   = (cx - bw / 2) / _inputSize * origW;
-      final top    = (cy - bh / 2) / _inputSize * origH;
-      final width  = bw / _inputSize * origW;
-      final height = bh / _inputSize * origH;
+      // Normalise to [0,1] to be able to scale to original image size later
+      final left = (cx - bw / 2);
+      final top = (cy - bh / 2);
+      final width = bw;
+      final height = bh;
 
       candidates.add(_RawBox(
         rect: Rect.fromLTWH(left, top, width, height),
@@ -302,18 +309,30 @@ class YoloDetector extends BaseDetector {
     final kept = _nms(candidates);
     print('🔍 After NMS: ${kept.length}');
 
-    return kept
-        .take(_maxResults)
-        .map((b) => Detection(
-              boundingBox: b.rect,
-              label: _labelForIndex(b.classIndex),
-              confidence: b.confidence,
-            ))
-        .toList();
+    
+
+    return kept.take(_maxResults).map((b) {
+      final scaledRect = Rect.fromLTWH(
+        // I need to shift the box towards the left side a little bit
+        b.rect.left * origW - 0.15 * origW, // shift left by 5% of original width
+        b.rect.top * origH + 0.15 * origH, // shift down by 5% of original height
+        b.rect.width * origW,
+        b.rect.height * origH + 0.18 * origH, // increase height by 5% of original height
+      );
+
+      print('YOLO boxes after scaling to original image: ${scaledRect}');
+
+      return Detection(
+        boundingBox: scaledRect,
+        label: _labelForIndex(b.classIndex),
+        confidence: b.confidence,
+      );
+    }).toList();
   }
 
   // ─── NMS ──────────────────────────────────────────────────────────────────
 
+  // nms stands for Non-Maximum Suppression.  It filters out overlapping boxes, keeping only the one with the highest confidence in each cluster of overlaps.
   List<_RawBox> _nms(List<_RawBox> boxes) {
     boxes.sort((a, b) => b.confidence.compareTo(a.confidence));
     final kept = <_RawBox>[];
@@ -341,26 +360,27 @@ class YoloDetector extends BaseDetector {
 
   // ─── Image helpers ────────────────────────────────────────────────────────
 
-  img.Image _nv21ToRgb(
-      Uint8List nv21, int width, int height, int rotation) {
+  img.Image _nv21ToRgb(Uint8List nv21, int width, int height, int rotation) {
     // Manual NV21 → RGB conversion
     // NV21 layout: Y plane (width×height bytes) followed by interleaved VU plane
-    final ySize  = width * height;
+    final ySize = width * height;
     final rgbImg = img.Image(width: width, height: height);
 
     for (int row = 0; row < height; row++) {
       for (int col = 0; col < width; col++) {
-        final yIndex  = row * width + col;
+        final yIndex = row * width + col;
         // VU plane starts at ySize; each 2×2 Y block shares one VU pair
         final uvIndex = ySize + (row ~/ 2) * width + (col & ~1);
 
-        final Y = nv21[yIndex]  & 0xFF;
-        final V = nv21[uvIndex] & 0xFF;      // NV21: V comes before U
+        final Y = nv21[yIndex] & 0xFF;
+        final V = nv21[uvIndex] & 0xFF; // NV21: V comes before U
         final U = nv21[uvIndex + 1] & 0xFF;
 
         // BT.601 full-range conversion
         final r = (Y + 1.402 * (V - 128)).round().clamp(0, 255);
-        final g = (Y - 0.344136 * (U - 128) - 0.714136 * (V - 128)).round().clamp(0, 255);
+        final g = (Y - 0.344136 * (U - 128) - 0.714136 * (V - 128))
+            .round()
+            .clamp(0, 255);
         final b = (Y + 1.772 * (U - 128)).round().clamp(0, 255);
 
         rgbImg.setPixelRgb(col, row, r, g, b);
@@ -369,8 +389,10 @@ class YoloDetector extends BaseDetector {
 
     // Rotate
     img.Image rotated = rgbImg;
-    if (rotation == 90)       rotated = img.copyRotate(rgbImg, angle: 90);
-    else if (rotation == 180) rotated = img.copyRotate(rgbImg, angle: 180);
+    if (rotation == 90)
+      rotated = img.copyRotate(rgbImg, angle: 90);
+    else if (rotation == 180)
+      rotated = img.copyRotate(rgbImg, angle: 180);
     else if (rotation == 270) rotated = img.copyRotate(rgbImg, angle: 270);
 
     return img.copyResize(rotated,
