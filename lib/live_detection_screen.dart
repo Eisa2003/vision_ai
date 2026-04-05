@@ -11,9 +11,6 @@ import 'services/base_detector.dart';
 import 'services/yolo_detector.dart';
 import 'widgets/bounding_box_painter.dart';
 
-// NOTE: google_mlkit_commons is still needed for ML Kit path detectors.
-// When YOLO is active, _buildInputImage() is bypassed entirely.
-
 class LiveDetectionScreen extends ConsumerStatefulWidget {
   const LiveDetectionScreen({super.key});
 
@@ -34,6 +31,10 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
   int _frameCount = 0;
   DateTime _lastFpsUpdate = DateTime.now();
 
+  BaseDetector? _detector;
+
+  // ─── Init ─────────────────────────────────────────────────────────────────
+
   @override
   void initState() {
     super.initState();
@@ -51,7 +52,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
       camera,
       ResolutionPreset.medium,
       enableAudio: false,
-      imageFormatGroup: ImageFormatGroup.nv21, // NV21 works for both paths
+      imageFormatGroup: ImageFormatGroup.nv21,
     );
 
     await _cameraController!.initialize();
@@ -61,52 +62,60 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
     _cameraController!.startImageStream(_onCameraFrame);
   }
 
-
-  BaseDetector? _detector;
+  // ─── Camera frame callback ────────────────────────────────────────────────
 
   Future<void> _onCameraFrame(CameraImage image) async {
-
+    // Skip frame if a previous inference is still in flight
     if (_isProcessing) return;
 
-  final detectorState = ref.read(activeDetectorProvider);
+    // Resolve the active detector from Riverpod
+    final detectorState = ref.read(activeDetectorProvider);
+    detectorState.when(
+      data: (d) => _detector = d,
+      loading: () => null,
+      error: (e, st) => print('❌ Detector error: $e'),
+    );
 
-  // ADD THIS — log every state so you can see what's really happening
-  detectorState.when(
-    data: (d) { /* fine */ },
-    loading: () => print("⏳ Detector still loading..."),
-    error: (e, st) => print("❌ Detector error: $e\n$st"),
-  );
-
-  if (detectorState is AsyncData<BaseDetector>) {  // note: add the generic type
-    _detector = detectorState.value!;
-  }
-
-    if (_detector == null) {
-      print("Detector not ready yet");
-      return;
-    }
+    if (_detector == null) return;
 
     final detector = _detector!;
 
+    // ── Snapshot bytes immediately on the main isolate ─────────────────────
+    // The camera reuses its plane buffers — without copying here, the
+    // background isolate would read garbage by the time it runs.
+    final allBytes = BytesBuilder();
+    for (final plane in image.planes) {
+      allBytes.add(Uint8List.fromList(plane.bytes));
+    }
+    final imageW = image.width;
+    final imageH = image.height;
+    final rotation = _cameraController!.description.sensorOrientation;
+
+    // Account for sensor rotation when reporting frame size to the painter
+    final frameSize = (rotation == 90 || rotation == 270)
+        ? Size(imageH.toDouble(), imageW.toDouble())
+        : Size(imageW.toDouble(), imageH.toDouble());
+
+    // ── Release the lock BEFORE awaiting inference ─────────────────────────
+    // This keeps the camera stream running while YOLO runs in the background.
+    // ML Kit manages its own threading so this helps it too.
     _isProcessing = true;
-
-    
-
-    //print("Detector runtime type: ${detector.runtimeType}");
 
     try {
       final distanceSvc = ref.read(activeDistanceProvider);
-      final frameSize = Size(image.width.toDouble(), image.height.toDouble());
 
       List<Detection> detections;
 
       if (detector is YoloDetector) {
-        // tflite_flutter path — pass raw NV21 bytes directly
-        print('YOLO detected');
-        detections = await _runYolo(detector, image);
+        // Runs in a background isolate — camera stays smooth
+        detections = await detector.detectFromBytesIsolated(
+          bytes: allBytes.toBytes(),
+          imageW: imageW,
+          imageH: imageH,
+          rotation: rotation,
+        );
       } else {
-        // ML Kit path (InputImage-based detectors)
-        print('Running ML Kit detector');
+        // ML Kit path — uses InputImage wrapper
         final inputImage = _buildInputImage(image);
         if (inputImage == null) return;
         detections = await detector.detect(inputImage);
@@ -123,6 +132,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
         );
       }).toList();
 
+      // FPS counter
       _frameCount++;
       final now = DateTime.now();
       if (now.difference(_lastFpsUpdate).inSeconds >= 1) {
@@ -135,32 +145,15 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
         _results = results;
         _imageSize = frameSize;
       });
+    } catch (e) {
+      print('❌ Frame processing error: $e');
     } finally {
       _isProcessing = false;
     }
   }
 
-  /// Feeds a [CameraImage] to the YoloDetector.
-  /// tflite_flutter works on raw NV21 bytes — no InputImage wrapper needed.
-  Future<List<Detection>> _runYolo(YoloDetector yolo, CameraImage image) async {
-    // NV21 stores Y plane first, then interleaved VU.
-    // Concatenate all planes into one contiguous buffer.
-    final allBytes = BytesBuilder();
-    for (final plane in image.planes) {
-      allBytes.add(plane.bytes);
-    }
+  // ─── ML Kit InputImage builder ────────────────────────────────────────────
 
-    print("running YOLO");
-
-    return yolo.detectFromBytes(
-      bytes: allBytes.toBytes(),
-      imageW: image.width,
-      imageH: image.height,
-      rotation: _cameraController!.description.sensorOrientation,
-    );
-  }
-
-  /// Builds an [InputImage] for ML Kit detectors.
   InputImage? _buildInputImage(CameraImage image) {
     final camera = _cameraController!.description;
     final sensorOrientation = camera.sensorOrientation;
@@ -175,8 +168,9 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
 
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
     if (format == null) return null;
-    if (format != InputImageFormat.nv21 && format != InputImageFormat.bgra8888)
+    if (format != InputImageFormat.nv21 && format != InputImageFormat.bgra8888) {
       return null;
+    }
 
     final plane = image.planes.first;
     return InputImage.fromBytes(
@@ -190,6 +184,8 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
     );
   }
 
+  // ─── Dispose ──────────────────────────────────────────────────────────────
+
   @override
   void dispose() {
     _cameraController?.stopImageStream();
@@ -197,7 +193,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
     super.dispose();
   }
 
-  // ─── UI ──────────────────────────────────────────────────────────────────
+  // ─── UI ───────────────────────────────────────────────────────────────────
 
   @override
   Widget build(BuildContext context) {
@@ -209,12 +205,15 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
       body: Stack(
         fit: StackFit.expand,
         children: [
+          // Camera preview
           if (_isCameraReady && _cameraController != null)
             SizedBox.expand(child: CameraPreview(_cameraController!))
           else
             const Center(
               child: CircularProgressIndicator(color: Color(0xFF00E5FF)),
             ),
+
+          // Bounding box overlay
           if (_isCameraReady && _imageSize != Size.zero)
             LayoutBuilder(builder: (ctx, constraints) {
               final widgetSize =
@@ -228,7 +227,11 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
                 ),
               );
             }),
+
+          // Top bar
           SafeArea(child: _buildTopBar(detectorType)),
+
+          // Bottom stats
           Positioned(
             bottom: 0,
             left: 0,
@@ -315,8 +318,8 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.1),
               borderRadius: BorderRadius.circular(20),
-              border:
-                  Border.all(color: const Color(0xFF00E5FF).withOpacity(0.4)),
+              border: Border.all(
+                  color: const Color(0xFF00E5FF).withOpacity(0.4)),
             ),
             child: Text(
               '${r.label} · ${(r.confidence * 100).toStringAsFixed(0)}% · ${r.distance}',
@@ -333,7 +336,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
   }
 }
 
-// ─── Shared small widgets ────────────────────────────────────────────────────
+// ─── Shared small widgets ─────────────────────────────────────────────────────
 
 class _GlassButton extends StatelessWidget {
   final IconData icon;

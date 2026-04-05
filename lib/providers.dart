@@ -10,7 +10,7 @@ import 'services/yolo_detector.dart';
 // ── Active detector ───────────────────────────────────────────────────────────
 
 final activeDetectorTypeProvider =
-    StateProvider<DetectorType>((ref) => DetectorType.yolo);
+    StateProvider<DetectorType>((ref) => DetectorType.mlKit);
 
 // This provider holds the currently active detector instance, which the UI listens to for changes.
 // We call the BaseDetector to abstract away the specific implementation (ML Kit, YOLO, etc.) from the UI.
