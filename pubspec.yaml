@@ -39,3 +39,4 @@ flutter:
   uses-material-design: true
   assets:
     - assets/models/yolov8n_float32.tflite
+    - assets/models/coco_labels.txt
