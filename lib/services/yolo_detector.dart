@@ -424,9 +424,13 @@ void _isolateEntry(_IsolateStartup startup) {
       final rgb   = YoloDetector._nv21ToRgb(
           message.imageBytes, message.imageW, message.imageH, message.rotation);
       final input = YoloDetector._imageToFloat32(rgb);
-      final dets  = YoloDetector._runInference(
-          interpreter, input,
-          message.imageW.toDouble(), message.imageH.toDouble());
+      // In _isolateEntry, replace the _runInference call with:
+final isRotated = message.rotation == 90 || message.rotation == 270;
+final dets = YoloDetector._runInference(
+    interpreter, input,
+    isRotated ? message.imageH.toDouble() : message.imageW.toDouble(),
+    isRotated ? message.imageW.toDouble() : message.imageH.toDouble(),
+);
 
       startup.mainSendPort.send(dets.map((d) => {
         'left':       d.boundingBox.left,

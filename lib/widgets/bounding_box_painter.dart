@@ -44,32 +44,54 @@ class BoundingBoxPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     if (results.isEmpty) return;
 
-    // ML Kit returns boxes in the sensor's native (landscape) coordinate space.
-    // When the phone is portrait the frame is rotated 90°, so we must swap
-    // width ↔ height before computing scale factors.
-    final bool isPortrait = widgetSize.height > widgetSize.width;
-    final double frameW = isPortrait ? imageSize.height : imageSize.width;
-    final double frameH = isPortrait ? imageSize.width : imageSize.height;
+    // imageSize is already rotation-corrected (tall in portrait) — no swap needed
+    final double frameW = imageSize.width;
+    final double frameH = imageSize.height;
 
-    final scaleX = widgetSize.width / frameW;
-    final scaleY = widgetSize.height / frameH;
+    final previewRect = _getPreviewRect(widgetSize, frameW, frameH);
+
+    final scaleX = previewRect.width / frameW;
+    final scaleY = previewRect.height / frameH;
 
     for (int i = 0; i < results.length; i++) {
-      final result = results[i];
       final color = i.isEven ? _accentCyan : _accentPurple;
-      _drawBox(canvas, result, scaleX, scaleY, color);
+      _drawBox(canvas, results[i], scaleX, scaleY, previewRect.left,
+          previewRect.top, color);
     }
   }
 
-  void _drawBox(Canvas canvas, DetectionResult result,
-      double scaleX, double scaleY, Color color) {
+  /// Returns the rect of the actual rendered camera image inside the widget.
+  /// CameraPreview fits the feed using BoxFit.cover by default — adjust if yours differs.
+  Rect _getPreviewRect(Size widget, double frameW, double frameH) {
+    final cameraAspect = frameW / frameH;
+    final widgetAspect = widget.width / widget.height;
+
+    double renderW, renderH;
+
+    // BoxFit.cover: fill widget, crop excess
+    if (cameraAspect > widgetAspect) {
+      renderH = widget.height;
+      renderW = renderH * cameraAspect;
+    } else {
+      renderW = widget.width;
+      renderH = renderW / cameraAspect;
+    }
+
+    final offsetX = (widget.width - renderW) / 2;
+    final offsetY = (widget.height - renderH) / 2;
+
+    return Rect.fromLTWH(offsetX, offsetY, renderW, renderH);
+  }
+
+  void _drawBox(Canvas canvas, DetectionResult result, double scaleX,
+      double scaleY, double offsetX, double offsetY, Color color) {
     final raw = result.boundingBox;
 
-    // Scale from image coords → widget coords
-    double left = raw.left * scaleX;
-    double top = raw.top * scaleY;
-    double right = raw.right * scaleX;
-    double bottom = raw.bottom * scaleY;
+    // Scale + shift into the actual preview rect
+    double left = offsetX + raw.left * scaleX;
+    double top = offsetY + raw.top * scaleY;
+    double right = offsetX + raw.right * scaleX;
+    double bottom = offsetY + raw.bottom * scaleY;
 
     // Mirror for front camera
     if (isFrontCamera) {
@@ -106,11 +128,15 @@ class BoundingBoxPainter extends CustomPainter {
     canvas.drawLine(Offset(right - cLen, top), Offset(right, top), cornerPaint);
     canvas.drawLine(Offset(right, top), Offset(right, top + cLen), cornerPaint);
     // BR
-    canvas.drawLine(Offset(right, bottom - cLen), Offset(right, bottom), cornerPaint);
-    canvas.drawLine(Offset(right, bottom), Offset(right - cLen, bottom), cornerPaint);
+    canvas.drawLine(
+        Offset(right, bottom - cLen), Offset(right, bottom), cornerPaint);
+    canvas.drawLine(
+        Offset(right, bottom), Offset(right - cLen, bottom), cornerPaint);
     // BL
-    canvas.drawLine(Offset(left + cLen, bottom), Offset(left, bottom), cornerPaint);
-    canvas.drawLine(Offset(left, bottom), Offset(left, bottom - cLen), cornerPaint);
+    canvas.drawLine(
+        Offset(left + cLen, bottom), Offset(left, bottom), cornerPaint);
+    canvas.drawLine(
+        Offset(left, bottom), Offset(left, bottom - cLen), cornerPaint);
 
     // ── Label background ────────────────────────────────────────────────────
     final labelText =
@@ -148,9 +174,9 @@ class BoundingBoxPainter extends CustomPainter {
 
     const padding = 5.0;
     const vGap = 2.0;
-    final bgWidth =
-        [labelPainter.width, distPainter.width].reduce((a, b) => a > b ? a : b) +
-            padding * 2;
+    final bgWidth = [labelPainter.width, distPainter.width]
+            .reduce((a, b) => a > b ? a : b) +
+        padding * 2;
     final bgHeight =
         labelPainter.height + distPainter.height + vGap + padding * 2;
 
@@ -159,8 +185,7 @@ class BoundingBoxPainter extends CustomPainter {
     final tagLeft = left.clamp(0.0, widgetSize.width - bgWidth);
 
     final bgRect = Rect.fromLTWH(tagLeft, tagTop, bgWidth, bgHeight);
-    final bgPaint = Paint()
-      ..color = Colors.black.withOpacity(0.75);
+    final bgPaint = Paint()..color = Colors.black.withOpacity(0.75);
 
     canvas.drawRRect(
       RRect.fromRectAndRadius(bgRect, const Radius.circular(4)),
@@ -183,7 +208,8 @@ class BoundingBoxPainter extends CustomPainter {
     );
     distPainter.paint(
       canvas,
-      Offset(tagLeft + padding + 3, tagTop + padding + labelPainter.height + vGap),
+      Offset(
+          tagLeft + padding + 3, tagTop + padding + labelPainter.height + vGap),
     );
   }
 
