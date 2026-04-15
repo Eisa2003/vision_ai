@@ -6,6 +6,7 @@ import 'services/base_distance.dart';
 import 'services/detection_service.dart';
 import 'services/distance_service.dart';
 import 'services/yolo_detector.dart';
+import 'services/focal_distance_service.dart';
 
 // ── Active detector ───────────────────────────────────────────────────────────
 
@@ -42,7 +43,7 @@ class DetectorNotifier extends AsyncNotifier<BaseDetector> {
 // ── Active distance service ───────────────────────────────────────────────────
 
 final activeDistanceTypeProvider =
-    StateProvider<DistanceType>((ref) => DistanceType.heuristic);
+    StateProvider<DistanceType>((ref) => DistanceType.focalLength);
 
 final activeDistanceProvider = Provider<BaseDistanceService>((ref) {
   final type = ref.watch(activeDistanceTypeProvider);
@@ -50,7 +51,6 @@ final activeDistanceProvider = Provider<BaseDistanceService>((ref) {
     case DistanceType.heuristic:
       return HeuristicDistanceService();
     case DistanceType.focalLength:
-      // Step 3 will fill this in.
-      return HeuristicDistanceService();
+      return FocalLengthDistanceService();
   }
 });
