@@ -52,7 +52,14 @@ class _ImageDetectionScreenState extends ConsumerState<ImageDetectionScreen> {
     }
 
     final detector = detectorState.value!;
-    final distanceSvc = ref.read(activeDistanceProvider);
+    final distanceState = ref.read(activeDistanceProvider);
+    
+    if (distanceState is! AsyncData) {
+      setState(() => _isProcessing = false);
+      return;
+    }
+    
+    final distanceSvc = distanceState.value!;
 
     final detections = detector is YoloDetector
         ? await detector.detectFromFile(picked.path)

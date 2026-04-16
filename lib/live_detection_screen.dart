@@ -11,6 +11,9 @@ import 'services/base_detector.dart';
 import 'services/yolo_detector.dart';
 import 'widgets/bounding_box_painter.dart';
 
+import 'services/base_distance.dart';
+import 'services/midas_distance_service.dart';
+
 class LiveDetectionScreen extends ConsumerStatefulWidget {
   const LiveDetectionScreen({super.key});
 
@@ -99,10 +102,26 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
     // ── Release the lock BEFORE awaiting inference ─────────────────────────
     // This keeps the camera stream running while YOLO runs in the background.
     // ML Kit manages its own threading so this helps it too.
+
     _isProcessing = true;
 
+    // After the allBytes snapshot, add:
+// Replace both reads of activeDistanceProvider with:
+    final distanceState = ref.read(activeDistanceProvider);
+    final distanceSvc = distanceState.valueOrNull;
+    print('🟠 distanceSvc type: ${distanceSvc.runtimeType}');
+// Then MiDaS submit:
+    if (distanceSvc is MidasDistanceService) {
+      distanceSvc.submitFrame(
+        yuvBytes: allBytes.toBytes(),
+        imageW: imageW,
+        imageH: imageH,
+        rotation: rotation,
+      );
+    }
+
     try {
-      final distanceSvc = ref.read(activeDistanceProvider);
+      //final distanceSvc = ref.read(activeDistanceProvider);
 
       List<Detection> detections;
 
@@ -128,7 +147,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
           boundingBox: d.boundingBox,
           label: d.label,
           confidence: d.confidence,
-          distance: distanceSvc.estimate(d.boundingBox, frameSize),
+          distance: distanceSvc?.estimate(d.boundingBox, frameSize) ?? 'N/A',
         );
       }).toList();
 
@@ -168,7 +187,8 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
 
     final format = InputImageFormatValue.fromRawValue(image.format.raw);
     if (format == null) return null;
-    if (format != InputImageFormat.nv21 && format != InputImageFormat.bgra8888) {
+    if (format != InputImageFormat.nv21 &&
+        format != InputImageFormat.bgra8888) {
       return null;
     }
 
@@ -195,11 +215,11 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
 
   // ─── UI ───────────────────────────────────────────────────────────────────
 
-   @override
+  @override
   Widget build(BuildContext context) {
     final detectorType = ref.watch(activeDetectorTypeProvider);
     final screenH = MediaQuery.of(context).size.height;
- 
+
     return Scaffold(
       backgroundColor: const Color(0xFF080C14),
       body: SafeArea(
@@ -207,16 +227,17 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
           children: [
             // ── Top bar ──────────────────────────────────────────────────────
             _buildTopBar(detectorType),
- 
+
             // ── Camera viewport (≈70 % of screen) ────────────────────────────
             Expanded(
               flex: 70,
               child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: _buildCameraViewport(),
               ),
             ),
- 
+
             // ── Bottom panel ──────────────────────────────────────────────────
             Expanded(
               flex: 30,
@@ -227,9 +248,9 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
       ),
     );
   }
- 
+
   // ── Camera viewport with rounded corners + overlay ────────────────────────
- 
+
   Widget _buildCameraViewport() {
     return ClipRRect(
       borderRadius: BorderRadius.circular(24),
@@ -249,7 +270,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
                 ),
               ),
             ),
- 
+
           // Subtle vignette to frame the feed
           IgnorePointer(
             child: Container(
@@ -265,7 +286,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
               ),
             ),
           ),
- 
+
           // Bounding boxes
           if (_isCameraReady && _imageSize != Size.zero)
             LayoutBuilder(builder: (ctx, constraints) {
@@ -278,17 +299,17 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
                 ),
               );
             }),
- 
+
           // Corner-bracket overlay (purely decorative, signals "scanning")
           const IgnorePointer(child: _ScannerBrackets()),
- 
+
           // Live pill — top-left of viewport
           Positioned(
             top: 12,
             left: 12,
             child: _LivePill(isActive: _isCameraReady && _results.isNotEmpty),
           ),
- 
+
           // Object count — top-right of viewport
           Positioned(
             top: 12,
@@ -299,9 +320,9 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
       ),
     );
   }
- 
+
   // ── Top bar ────────────────────────────────────────────────────────────────
- 
+
   Widget _buildTopBar(DetectorType detectorType) {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 0),
@@ -325,9 +346,9 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
               ),
             ),
           ),
- 
+
           const SizedBox(width: 14),
- 
+
           // Title
           const Expanded(
             child: Text(
@@ -340,7 +361,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
               ),
             ),
           ),
- 
+
           // FPS badge
           _TopBadge(
             label: '$_fps',
@@ -351,15 +372,15 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
       ),
     );
   }
- 
+
   Color get _fpsColor {
     if (_fps >= 20) return const Color(0xFF00E5A0);
     if (_fps >= 10) return const Color(0xFFFFB300);
     return const Color(0xFFFF4B6E);
   }
- 
+
   // ── Bottom panel ───────────────────────────────────────────────────────────
- 
+
   Widget _buildBottomPanel(DetectorType detectorType) {
     return Container(
       margin: const EdgeInsets.fromLTRB(16, 0, 16, 12),
@@ -400,9 +421,9 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
               ],
             ),
           ),
- 
+
           const SizedBox(height: 10),
- 
+
           // ── Divider ─────────────────────────────────────────────────────
           Divider(
             height: 1,
@@ -410,9 +431,9 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
             indent: 18,
             endIndent: 18,
           ),
- 
+
           const SizedBox(height: 10),
- 
+
           // ── Detection chips ─────────────────────────────────────────────
           Expanded(
             child: _results.isEmpty
@@ -437,32 +458,32 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
                     ),
                   ),
           ),
- 
+
           const SizedBox(height: 8),
         ],
       ),
     );
   }
 }
- 
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Supporting widgets
 // ─────────────────────────────────────────────────────────────────────────────
- 
+
 /// Animated "LIVE" pill shown inside the camera viewport.
 class _LivePill extends StatefulWidget {
   final bool isActive;
   const _LivePill({required this.isActive});
- 
+
   @override
   State<_LivePill> createState() => _LivePillState();
 }
- 
+
 class _LivePillState extends State<_LivePill>
     with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _fade;
- 
+
   @override
   void initState() {
     super.initState();
@@ -472,13 +493,13 @@ class _LivePillState extends State<_LivePill>
     )..repeat(reverse: true);
     _fade = Tween<double>(begin: 0.4, end: 1.0).animate(_ctrl);
   }
- 
+
   @override
   void dispose() {
     _ctrl.dispose();
     super.dispose();
   }
- 
+
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
@@ -502,18 +523,16 @@ class _LivePillState extends State<_LivePill>
               height: 6,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: widget.isActive
-                    ? const Color(0xFF00E5A0)
-                    : Colors.white38,
+                color:
+                    widget.isActive ? const Color(0xFF00E5A0) : Colors.white38,
               ),
             ),
             const SizedBox(width: 5),
             Text(
               'LIVE',
               style: TextStyle(
-                color: widget.isActive
-                    ? const Color(0xFF00E5A0)
-                    : Colors.white54,
+                color:
+                    widget.isActive ? const Color(0xFF00E5A0) : Colors.white54,
                 fontSize: 9,
                 fontWeight: FontWeight.w800,
                 letterSpacing: 1.5,
@@ -525,12 +544,12 @@ class _LivePillState extends State<_LivePill>
     );
   }
 }
- 
+
 /// Object count badge inside the camera viewport.
 class _CountBadge extends StatelessWidget {
   final int count;
   const _CountBadge({required this.count});
- 
+
   @override
   Widget build(BuildContext context) {
     return AnimatedContainer(
@@ -557,7 +576,7 @@ class _CountBadge extends StatelessWidget {
     );
   }
 }
- 
+
 /// FPS / model badge for the top bar.
 class _TopBadge extends StatelessWidget {
   final String label;
@@ -568,7 +587,7 @@ class _TopBadge extends StatelessWidget {
     required this.sublabel,
     required this.color,
   });
- 
+
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -606,21 +625,21 @@ class _TopBadge extends StatelessWidget {
     );
   }
 }
- 
+
 /// Pulsing dot indicator next to the model name.
 class _PulsingDot extends StatefulWidget {
   final bool active;
   const _PulsingDot({required this.active});
- 
+
   @override
   State<_PulsingDot> createState() => _PulsingDotState();
 }
- 
+
 class _PulsingDotState extends State<_PulsingDot>
     with SingleTickerProviderStateMixin {
   late AnimationController _ctrl;
   late Animation<double> _scale;
- 
+
   @override
   void initState() {
     super.initState();
@@ -632,13 +651,13 @@ class _PulsingDotState extends State<_PulsingDot>
       CurvedAnimation(parent: _ctrl, curve: Curves.easeInOut),
     );
   }
- 
+
   @override
   void dispose() {
     _ctrl.dispose();
     super.dispose();
   }
- 
+
   @override
   Widget build(BuildContext context) {
     return ScaleTransition(
@@ -648,9 +667,7 @@ class _PulsingDotState extends State<_PulsingDot>
         height: 7,
         decoration: BoxDecoration(
           shape: BoxShape.circle,
-          color: widget.active
-              ? const Color(0xFF00E5FF)
-              : Colors.white24,
+          color: widget.active ? const Color(0xFF00E5FF) : Colors.white24,
           boxShadow: widget.active
               ? [
                   BoxShadow(
@@ -665,12 +682,12 @@ class _PulsingDotState extends State<_PulsingDot>
     );
   }
 }
- 
+
 /// Single detection result chip shown in the bottom panel.
 class _DetectionChip extends StatelessWidget {
   final DetectionResult result;
   const _DetectionChip({required this.result});
- 
+
   // Deterministic colour per label
   Color _labelColor() {
     const palette = [
@@ -683,7 +700,7 @@ class _DetectionChip extends StatelessWidget {
     ];
     return palette[result.label.hashCode.abs() % palette.length];
   }
- 
+
   @override
   Widget build(BuildContext context) {
     final color = _labelColor();
@@ -745,17 +762,17 @@ class _DetectionChip extends StatelessWidget {
     );
   }
 }
- 
+
 /// Four corner brackets drawn over the camera feed — pure decoration.
 class _ScannerBrackets extends StatelessWidget {
   const _ScannerBrackets();
- 
+
   @override
   Widget build(BuildContext context) {
     return CustomPaint(painter: _BracketPainter());
   }
 }
- 
+
 class _BracketPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
@@ -764,10 +781,10 @@ class _BracketPainter extends CustomPainter {
       ..strokeWidth = 2.5
       ..strokeCap = StrokeCap.round
       ..style = PaintingStyle.stroke;
- 
+
     const len = 22.0;
     const pad = 16.0;
- 
+
     // Top-left
     canvas.drawLine(Offset(pad, pad + len), Offset(pad, pad), paint);
     canvas.drawLine(Offset(pad, pad), Offset(pad + len, pad), paint);
@@ -787,18 +804,18 @@ class _BracketPainter extends CustomPainter {
     canvas.drawLine(Offset(size.width - pad, size.height - pad - len),
         Offset(size.width - pad, size.height - pad), paint);
   }
- 
+
   @override
   bool shouldRepaint(_BracketPainter _) => false;
 }
- 
+
 // ─── Shared small widgets (unchanged) ────────────────────────────────────────
- 
+
 class _GlassButton extends StatelessWidget {
   final IconData icon;
   final VoidCallback onTap;
   const _GlassButton({required this.icon, required this.onTap});
- 
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -816,12 +833,12 @@ class _GlassButton extends StatelessWidget {
     );
   }
 }
- 
+
 class _StatusBadge extends StatelessWidget {
   final String label;
   final Color color;
   const _StatusBadge({required this.label, required this.color});
- 
+
   @override
   Widget build(BuildContext context) {
     return Container(

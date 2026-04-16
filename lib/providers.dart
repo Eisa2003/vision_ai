@@ -7,6 +7,7 @@ import 'services/detection_service.dart';
 import 'services/distance_service.dart';
 import 'services/yolo_detector.dart';
 import 'services/focal_distance_service.dart';
+import 'services/midas_distance_service.dart';
 
 // ── Active detector ───────────────────────────────────────────────────────────
 
@@ -43,14 +44,25 @@ class DetectorNotifier extends AsyncNotifier<BaseDetector> {
 // ── Active distance service ───────────────────────────────────────────────────
 
 final activeDistanceTypeProvider =
-    StateProvider<DistanceType>((ref) => DistanceType.focalLength);
+    StateProvider<DistanceType>((ref) => DistanceType.midas);
 
-final activeDistanceProvider = Provider<BaseDistanceService>((ref) {
-  final type = ref.watch(activeDistanceTypeProvider);
-  switch (type) {
-    case DistanceType.heuristic:
-      return HeuristicDistanceService();
-    case DistanceType.focalLength:
-      return FocalLengthDistanceService();
-  }
+final activeDistanceProvider = AsyncNotifierProvider<DistanceNotifier, BaseDistanceService>(() {
+  return DistanceNotifier();
 });
+
+class DistanceNotifier extends AsyncNotifier<BaseDistanceService> {
+  @override
+  Future<BaseDistanceService> build() async {
+    final type = ref.watch(activeDistanceTypeProvider);
+    switch (type) {
+      case DistanceType.heuristic:
+        return HeuristicDistanceService();
+      case DistanceType.focalLength:
+        return FocalLengthDistanceService();
+      case DistanceType.midas:
+        final svc = MidasDistanceService();
+        await svc.init();   // ← this is the line that was missing
+        return svc;
+    }
+  }
+}

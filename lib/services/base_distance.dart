@@ -29,6 +29,7 @@ abstract class BaseDistanceService {
 enum DistanceType {
   heuristic,
   focalLength,
+  midas,
 }
 
 extension DistanceTypeLabel on DistanceType {
@@ -38,6 +39,8 @@ extension DistanceTypeLabel on DistanceType {
         return 'Heuristic (area)';
       case DistanceType.focalLength:
         return 'Focal length';
+      case DistanceType.midas:
+        return 'Midas';
     }
   }
 }
