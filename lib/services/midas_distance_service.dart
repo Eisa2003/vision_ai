@@ -5,6 +5,7 @@ import 'package:flutter/painting.dart';
 import 'package:flutter/services.dart' show rootBundle;
 import 'base_distance.dart';
 import 'midas_isolate.dart';
+import 'dart:math' as Math;
 
 class MidasDistanceService extends BaseDistanceService {
   SendPort? _isolateSendPort;
@@ -23,7 +24,8 @@ class MidasDistanceService extends BaseDistanceService {
     final modelBytes = await rootBundle
         .load('assets/models/midas_v21_small.tflite')
         .then((bd) => bd.buffer.asUint8List());
-    print('🟡 MiDaS init: model bytes loaded — ${modelBytes.lengthInBytes} bytes');
+    print(
+        '🟡 MiDaS init: model bytes loaded — ${modelBytes.lengthInBytes} bytes');
 
     _isolateSendPort = await spawnMidasIsolate();
     print('🟡 MiDaS init: isolate spawned, sending model bytes...');
@@ -37,7 +39,8 @@ class MidasDistanceService extends BaseDistanceService {
     required int imageH,
     required int rotation,
   }) {
-    print('🟡 MiDaS submitFrame: inFlight=$_inferenceInFlight port=${_isolateSendPort != null}');
+    print(
+        '🟡 MiDaS submitFrame: inFlight=$_inferenceInFlight port=${_isolateSendPort != null}');
     if (_inferenceInFlight || _isolateSendPort == null) return;
     _inferenceInFlight = true;
 
@@ -69,62 +72,67 @@ class MidasDistanceService extends BaseDistanceService {
     // Outside both callbacks — sends immediately
     _isolateSendPort!.send({
       'yuvBytes': yuvBytes,
-      'imageW':   imageW,
-      'imageH':   imageH,
+      'imageW': imageW,
+      'imageH': imageH,
       'rotation': rotation,
-      'replyTo':  _replyPort!.sendPort,
+      'replyTo': _replyPort!.sendPort,
     });
   } // ← submitFrame closes here
 
- @override
-double estimateMeters(Rect boundingBox, Size imageSize) {
-  final map = _depthMap;
-  if (map == null) {
-    print('🔵 MiDaS: depthMap is null — isolate not yet replied');
-    return -1;
-  }
-
-  final cx = ((boundingBox.center.dx / imageSize.width) * kMidasSize)
-      .clamp(0, kMidasSize - 1).toInt();
-  final cy = ((boundingBox.center.dy / imageSize.height) * kMidasSize)
-      .clamp(0, kMidasSize - 1).toInt();
-
-  double sum = 0;
-  int count = 0;
-  for (int dy = -2; dy <= 2; dy++) {
-    for (int dx = -2; dx <= 2; dx++) {
-      final nx = (cx + dx).clamp(0, kMidasSize - 1);
-      final ny = (cy + dy).clamp(0, kMidasSize - 1);
-      sum += map[ny * kMidasSize + nx];
-      count++;
+  @override
+  double estimateMeters(Rect boundingBox, Size imageSize) {
+    final map = _depthMap;
+    if (map == null) {
+      print('🔵 MiDaS: depthMap is null — isolate not yet replied');
+      return -1;
     }
+
+    final cx = ((boundingBox.center.dx / imageSize.width) * kMidasSize)
+        .clamp(0, kMidasSize - 1)
+        .toInt();
+    final cy = ((boundingBox.center.dy / imageSize.height) * kMidasSize)
+        .clamp(0, kMidasSize - 1)
+        .toInt();
+
+    double sum = 0;
+    int count = 0;
+    for (int dy = -2; dy <= 2; dy++) {
+      for (int dx = -2; dx <= 2; dx++) {
+        final nx = (cx + dx).clamp(0, kMidasSize - 1);
+        final ny = (cy + dy).clamp(0, kMidasSize - 1);
+        sum += map[ny * kMidasSize + nx];
+        count++;
+      }
+    }
+
+    final normalised = sum / count;
+    print(
+        '🔵 MiDaS: cx=$cx cy=$cy | normalised=$normalised | sum=$sum count=$count');
+
+    if (normalised.isNaN || normalised.isInfinite) {
+      print('❌ MiDaS: bad normalised value, returning -1');
+      return -1;
+    }
+
+    // Reciprocal mapping — matches how disparity relates to real distance.
+    // Tune _scale by holding an object at exactly 1m, note normalised value,
+    // then set _scale = normalised + 0.05
+    const double _scale = 0.2;
+    const double _gamma = 1.2; // values > 1 compress close distances
+
+// Apply gamma to push high normalised values closer together
+    final curved = Math.pow(normalised, _gamma).toDouble();
+    final meters = _scale / (curved + 0.05);
+
+    print('🔵 MiDaS: meters=${meters.toStringAsFixed(2)}');
+    return meters;
   }
-
-  final normalised = sum / count;
-print('🔵 MiDaS: cx=$cx cy=$cy | normalised=$normalised | sum=$sum count=$count');
-
-if (normalised.isNaN || normalised.isInfinite) {
-  print('❌ MiDaS: bad normalised value, returning -1');
-  return -1;
-}
-
-  // MiDaS disparity: high value = close object
-  // Convert: meters = scale / (normalised + epsilon)
-  // At normalised=1.0 (touching) → ~_scale meters... that's wrong.
-  // We want: normalised=1.0 → ~0.3m, normalised=0.1 → ~3m
-  const double _near = 0.3;  // closest readable distance (metres)
-  const double _far  = 8.0;  // furthest readable distance (metres)
-  final meters = _near + (_far - _near) * (1.0 - normalised);
-
-  print('🔵 MiDaS: meters=${meters.toStringAsFixed(2)}');
-  return meters;
-}
 
   @override
-String estimate(Rect boundingBox, Size imageSize) {
-  final m = estimateMeters(boundingBox, imageSize);
-  if (m < 0 || m.isNaN || m.isInfinite) return '—';
-  if (m < 0.5) return '< 0.5 m';
-  return '~${m.toStringAsFixed(1)} m';
-}
+  String estimate(Rect boundingBox, Size imageSize) {
+    final m = estimateMeters(boundingBox, imageSize);
+    if (m < 0 || m.isNaN || m.isInfinite) return '—';
+    if (m < 0.5) return '< 0.5 m';
+    return '~${m.toStringAsFixed(1)} m';
+  }
 }
