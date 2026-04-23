@@ -6,6 +6,7 @@ import 'providers.dart';
 import 'services/base_detector.dart';
 import 'live_detection_screen.dart';
 import 'image_detection_screen.dart';
+import 'services/base_distance.dart';
 
 class HomeScreen extends ConsumerWidget {
   const HomeScreen({super.key});
@@ -13,6 +14,7 @@ class HomeScreen extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final activeDetector = ref.watch(activeDetectorTypeProvider);
+    final activeDistance = ref.watch(activeDistanceTypeProvider);
 
     return Scaffold(
       body: Container(
@@ -30,53 +32,61 @@ class HomeScreen extends ConsumerWidget {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 28.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const SizedBox(height: 56),
-                _buildHeader(),
-                const SizedBox(height: 36),
-
-                // ── Model selector ──────────────────────────────────────────
-                _ModelSelector(
-                  selected: activeDetector,
-                  onChanged: (type) =>
-                      ref.read(activeDetectorTypeProvider.notifier).state = type,
-                ),
-
-                const SizedBox(height: 32),
-
-                // ── Action cards ────────────────────────────────────────────
-                _DetectionCard(
-                  icon: Icons.videocam_rounded,
-                  title: 'Live Detection',
-                  subtitle: 'Real-time object detection\nvia camera stream',
-                  accentColor: const Color(0xFF00E5FF),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const LiveDetectionScreen(),
+            child: SingleChildScrollView(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const SizedBox(height: 56),
+                  _buildHeader(),
+                  const SizedBox(height: 36),
+                  // ── Model selector ──────────────────────────────────────────
+                  _ModelSelector(
+                    selected: activeDetector,
+                    onChanged: (type) => ref
+                        .read(activeDetectorTypeProvider.notifier)
+                        .state = type,
+                  ),
+                  // ── Distance method selector ────────────────────────────────
+                  const SizedBox(height: 28),
+                  _DistanceSelector(
+                    selected: activeDistance,
+                    onChanged: (type) => ref
+                        .read(activeDistanceTypeProvider.notifier)
+                        .state = type,
+                  ),
+                  // ── Action cards ────────────────────────────────────────────
+                  const SizedBox(height: 32),
+                  _DetectionCard(
+                    icon: Icons.videocam_rounded,
+                    title: 'Live Detection',
+                    subtitle: 'Real-time object detection\nvia camera stream',
+                    accentColor: const Color(0xFF00E5FF),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const LiveDetectionScreen(),
+                      ),
                     ),
                   ),
-                ),
-                const SizedBox(height: 16),
-                _DetectionCard(
-                  icon: Icons.image_search_rounded,
-                  title: 'Image Detection',
-                  subtitle: 'Upload an image and detect\nobjects with distance',
-                  accentColor: const Color(0xFF7C4DFF),
-                  onTap: () => Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const ImageDetectionScreen(),
+                  const SizedBox(height: 16),
+                  _DetectionCard(
+                    icon: Icons.image_search_rounded,
+                    title: 'Image Detection',
+                    subtitle:
+                        'Upload an image and detect\nobjects with distance',
+                    accentColor: const Color(0xFF7C4DFF),
+                    onTap: () => Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const ImageDetectionScreen(),
+                      ),
                     ),
                   ),
-                ),
-
-                const Spacer(),
-                _buildFooter(),
-                const SizedBox(height: 24),
-              ],
+                  const SizedBox(height: 32), // ← replaced Spacer()
+                  _buildFooter(),
+                  const SizedBox(height: 24),
+                ],
+              ),
             ),
           ),
         ),
@@ -288,6 +298,8 @@ class _ModelChip extends StatelessWidget {
     required this.onTap,
   });
 
+// ─── Distance Method Selector ───────────────────────────────────────────────────
+
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
@@ -389,6 +401,146 @@ class _ModelChip extends StatelessWidget {
         ),
       ),
     );
+  }
+}
+
+// ─── Distance Option data class ───────────────────────────────────────────────
+class _DistanceOption {
+  final DistanceType type;
+  final String label;
+  final String sublabel;
+  final IconData icon;
+  final Color color;
+
+  const _DistanceOption({
+    required this.type,
+    required this.label,
+    required this.sublabel,
+    required this.icon,
+    required this.color,
+  });
+}
+
+// ─── Distance Selector ────────────────────────────────────────────────────────
+class _DistanceSelector extends StatelessWidget {
+  final DistanceType selected;
+  final ValueChanged<DistanceType> onChanged;
+
+  const _DistanceSelector({required this.selected, required this.onChanged});
+
+  static const _options = [
+    _DistanceOption(
+      type: DistanceType.heuristic,
+      label: 'Heuristic',
+      sublabel: 'Area · Fast',
+      icon: Icons.straighten_rounded,
+      color: Color(0xFFFFB300),
+    ),
+    _DistanceOption(
+      type: DistanceType.focalLength,
+      label: 'Focal',
+      sublabel: 'Lens · Stable',
+      icon: Icons.center_focus_strong_rounded,
+      color: Color(0xFF7C4DFF),
+    ),
+    _DistanceOption(
+      type: DistanceType.midas,
+      label: 'MiDaS',
+      sublabel: 'Neural · Depth',
+      icon: Icons.layers_rounded,
+      color: Color(0xFF00E5FF),
+    ),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        // Section label — same style as _ModelSelector
+        Padding(
+          padding: const EdgeInsets.only(left: 2, bottom: 12),
+          child: Row(
+            children: [
+              Container(
+                width: 3,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: const Color(0xFF00E5FF),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'DISTANCE METHOD',
+                style: TextStyle(
+                  color: Colors.white.withOpacity(0.4),
+                  fontSize: 10,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 2,
+                ),
+              ),
+            ],
+          ),
+        ),
+        // Chip row — reuses _ModelChip via _ModelOption adapter
+        // To add a new distance method: just add an entry to _options list. No other UI code needs to change.
+        SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: _options.map((opt) {
+              final isSelected = selected == opt.type;
+              return Padding(
+                padding: EdgeInsets.only(
+                  right: opt == _options.last ? 0 : 10,
+                ),
+                child: SizedBox(
+                  width: 130, // fixed width per chip
+                  child: _ModelChip(
+                    option: _ModelOption(
+                      type: DetectorType.mlKit,
+                      label: opt.label,
+                      sublabel: opt.sublabel,
+                      icon: opt.icon,
+                      color: opt.color,
+                    ),
+                    isSelected: isSelected,
+                    onTap: () => onChanged(opt.type),
+                  ),
+                ),
+              );
+            }).toList(),
+          ),
+        ),
+        const SizedBox(height: 10),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 250),
+          child: Padding(
+            key: ValueKey(selected),
+            padding: const EdgeInsets.only(left: 2),
+            child: Text(
+              _descriptionFor(selected),
+              style: TextStyle(
+                color: Colors.white.withOpacity(0.3),
+                fontSize: 11,
+                height: 1.5,
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  String _descriptionFor(DistanceType type) {
+    switch (type) {
+      case DistanceType.heuristic:
+        return 'Bounding box area heuristic — fast, no model needed.\nLess accurate at varying distances.';
+      case DistanceType.focalLength:
+        return 'Focal length estimation — stable across lighting.\nRequires known object size for calibration.';
+      case DistanceType.midas:
+        return 'MiDaS v2.1 neural depth — per-pixel depth map.\nMore accurate, runs on background isolate.';
+    }
   }
 }
 
