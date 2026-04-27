@@ -7,9 +7,9 @@ import 'base_distance.dart';
 /// Formula: distance ≈ referenceArea / normalisedBoxArea
 /// Behaviour is identical to before.
 class HeuristicDistanceService extends BaseDistanceService {
-  // Tune this by placing a known object at a known distance.
-  // A box filling ~25% of a 1080p frame at ~2 m ≈ 120 000.
-  static const double _referenceArea = 120000.0;
+  // Calibrated: shelf at ~2 m → box 277×265 on 480×720 frame
+  // _referenceArea = 2.0 × (277 × 265) = 146,810 → rounded to 150,000. At 2 meters, the box (for the reference object) takes up ~20% of the frame → 150,000 is ~20% of 480×720 (345,600).
+  static const double _referenceArea = 150000.0;
   static const double _minDistance = 0.3;
   static const double _maxDistance = 15.0;
 
@@ -29,11 +29,14 @@ class HeuristicDistanceService extends BaseDistanceService {
 
   @override
   double estimateMeters(Rect boundingBox, Size imageSize) {
+    print('📦 BOX: w=${boundingBox.width.toInt()} h=${boundingBox.height.toInt()} | IMAGE: ${imageSize.width.toInt()}x${imageSize.height.toInt()}');
     final boxArea = boundingBox.width * boundingBox.height;
     if (boxArea <= 0) return _maxDistance;
     final imageArea = imageSize.width * imageSize.height;
-    final normalised = boxArea / imageArea;
-    return ((_referenceArea / imageArea) / normalised)
+    final normalised = boxArea / imageArea; // how much of the frame the box takes up
+    return ((_referenceArea / imageArea) / normalised) // refArea/imageArea gives us the normalised area of the reference object, 
+                                                       // dividing by the normalised box area gives us how many "reference objects" fit in the box, which relates to distance.
+                                                       // so like 1 reference object -> distance = 2m (based on calibration), 4 reference objects → distance = 1m, etc.
         .clamp(_minDistance, _maxDistance);
   }
 }
