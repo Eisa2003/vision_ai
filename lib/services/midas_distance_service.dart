@@ -117,14 +117,16 @@ class MidasDistanceService extends BaseDistanceService {
     // Reciprocal mapping — matches how disparity relates to real distance.
     // Tune _scale by holding an object at exactly 1m, note normalised value,
     // then set _scale = normalised + 0.05
-    const double _scale = 0.2;
+    const double _scale = 0.69;
     const double _gamma = 1.2; // values > 1 compress close distances
 
 // Apply gamma to push high normalised values closer together
     final curved = Math.pow(normalised, _gamma).toDouble();
     final meters = _scale / (curved + 0.05);
 
-    print('🔵 MiDaS: meters=${meters.toStringAsFixed(2)}');
+    // print('🔵 MiDaS: meters=${meters.toStringAsFixed(2)}');
+    // 👇 Add this
+    print('🔵 MiDaS CALIB: normalised=$normalised | curved=$curved | meters=${meters.toStringAsFixed(2)}');
     return meters;
   }
 
