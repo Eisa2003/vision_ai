@@ -147,7 +147,7 @@ class HomeScreen extends ConsumerWidget {
             size: 13, color: Colors.white.withOpacity(0.25)),
         const SizedBox(width: 6),
         Text(
-          "Master's Project · Computer Vision",
+          "Master's Project · EisaVision",
           style: TextStyle(
             color: Colors.white.withOpacity(0.25),
             fontSize: 11,

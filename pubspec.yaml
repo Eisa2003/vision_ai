@@ -1,5 +1,5 @@
-name: object_detection_app
-description: Object detection and distance estimation using ML Kit.
+name: EisaVision
+description: Object detection and distance estimation using ML Kit and YOLOv8n.
 publish_to: 'none'
 version: 1.0.0+1
 
