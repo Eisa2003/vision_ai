@@ -1,7 +1,9 @@
 // FILE: lib/live_detection_screen.dart
 
+import 'dart:async';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:camera/camera.dart';
 import 'package:google_mlkit_commons/google_mlkit_commons.dart';
@@ -30,6 +32,9 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
   bool _isProcessing = false;
   bool _isCameraReady = false;
   bool _isFrontCamera = false;
+  bool _showCloseAlert = false;
+  Timer? _closeAlertTimer;
+  DateTime? _lastCloseAlertAt;
   int _fps = 0;
   int _frameCount = 0;
   DateTime _lastFpsUpdate = DateTime.now();
@@ -109,7 +114,6 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
 // Replace both reads of activeDistanceProvider with:
     final distanceState = ref.read(activeDistanceProvider);
     final distanceSvc = distanceState.valueOrNull;
-    print('🟠 distanceSvc type: ${distanceSvc.runtimeType}');
 // Then MiDaS submit:
     if (distanceSvc is MidasDistanceService) {
       distanceSvc.submitFrame(
@@ -142,6 +146,16 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
 
       if (!mounted) return;
 
+    final nearestDistanceMeters =
+      (detections.isEmpty || distanceSvc == null)
+        ? null
+        : detections
+          .map((d) =>
+            distanceSvc.estimateMeters(d.boundingBox, frameSize))
+          .reduce((a, b) => a < b ? a : b);
+
+    _maybeTriggerCloseAlert(nearestDistanceMeters);
+
       final results = detections.map((d) {
         return DetectionResult(
           boundingBox: d.boundingBox,
@@ -169,6 +183,29 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
     } finally {
       _isProcessing = false;
     }
+  }
+
+  void _maybeTriggerCloseAlert(double? nearestDistanceMeters) {
+    if (nearestDistanceMeters == null || nearestDistanceMeters >= 1.0) {
+      return;
+    }
+
+    final now = DateTime.now();
+    if (_lastCloseAlertAt != null &&
+        now.difference(_lastCloseAlertAt!) < const Duration(seconds: 2)) {
+      return;
+    }
+    _lastCloseAlertAt = now;
+
+    HapticFeedback.mediumImpact();
+
+    _closeAlertTimer?.cancel();
+    if (!mounted) return;
+    setState(() => _showCloseAlert = true);
+    _closeAlertTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted) return;
+      setState(() => _showCloseAlert = false);
+    });
   }
 
   // ─── ML Kit InputImage builder ────────────────────────────────────────────
@@ -208,6 +245,7 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
 
   @override
   void dispose() {
+    _closeAlertTimer?.cancel();
     _cameraController?.stopImageStream();
     _cameraController?.dispose();
     super.dispose();
@@ -316,6 +354,16 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
             right: 12,
             child: _CountBadge(count: _results.length),
           ),
+
+          if (_showCloseAlert)
+            Positioned(
+              left: 12,
+              right: 12,
+              bottom: 12,
+              child: _CloseDistanceBanner(
+                text: 'Object is under 1 m',
+              ),
+            ),
         ],
       ),
     );
@@ -421,6 +469,8 @@ class _LiveDetectionScreenState extends ConsumerState<LiveDetectionScreen> {
               ],
             ),
           ),
+
+          const SizedBox(height: 10),
 
           const SizedBox(height: 10),
 
@@ -807,6 +857,40 @@ class _BracketPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_BracketPainter _) => false;
+}
+
+class _CloseDistanceBanner extends StatelessWidget {
+  final String text;
+  const _CloseDistanceBanner({required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Center(
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFF4B6E).withOpacity(0.92),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFFFF4B6E).withOpacity(0.25),
+              blurRadius: 16,
+              spreadRadius: 1,
+            ),
+          ],
+        ),
+        child: Text(
+          text,
+          style: const TextStyle(
+            color: Colors.white,
+            fontSize: 12,
+            fontWeight: FontWeight.w800,
+            letterSpacing: 0.4,
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 // ─── Shared small widgets (unchanged) ────────────────────────────────────────
